@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NFT Store</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--text:#1a1a1a;--muted:#6b6b6b;--line:#e3e3df;--accent:#5b4bdb;--accent-t:#fff;--ok:#1b7f4b;--err:#c0392b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101013;--card:#1b1b20;--text:#f0f0f0;--muted:#9a9aa2;--line:#2c2c32;--accent:#8b7dff;--accent-t:#111;--ok:#4cc38a;--err:#ff7a6b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#101013;--card:#1b1b20;--text:#f0f0f0;--muted:#9a9aa2;--line:#2c2c32;--accent:#8b7dff;--accent-t:#111;--ok:#4cc38a;--err:#ff7a6b;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 0 16px}
+h1{font-size:1.25rem;margin:0}
+button,.btn{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:11px 18px;background:var(--accent);color:var(--accent-t);font-weight:600;text-decoration:none;display:inline-block;text-align:center}
+.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.mint{display:grid;grid-template-columns:1fr 1fr;gap:20px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+@media (max-width:640px){.mint{grid-template-columns:1fr}}
+.art{border-radius:12px;overflow:hidden;aspect-ratio:1/1}
+.art svg{display:block;width:100%;height:100%}
+h2{margin:0 0 4px;font-size:1.5rem}
+.muted{color:var(--muted);font-size:.92rem}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+.bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;width:0;background:var(--accent)}
+.qty{display:flex;align-items:center;gap:12px;margin:14px 0}
+.qty span{min-width:24px;text-align:center;font-weight:700}
+#status,#help{margin:14px 0;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);display:none;word-break:break-word;font-size:.92rem}
+#status.ok{border-color:var(--ok)}#status.err{border-color:var(--err)}
+#help .links{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+h3{margin:26px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.grid .art{border:1px solid var(--line)}
+footer{margin-top:28px;font-size:.8rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>◆ <span id="brand"></span></h1>
+<button id="connect">Connect Wallet</button>
+</header>
+<div id="help">
+<strong>No wallet detected in this browser.</strong>
+<div class="muted">Open this page inside your wallet’s built-in browser, or use a desktop browser with a wallet extension installed.</div>
+<div class="links">
+<a class="btn" id="mmLink" target="_blank" rel="noopener">Open in MetaMask</a>
+<a class="btn ghost" id="twLink" target="_blank" rel="noopener">Open in Trust Wallet</a>
+</div>
+</div>
+<div class="mint">
+<div class="art" id="hero"></div>
+<div>
+<h2 id="cname"></h2>
+<div class="muted" id="cdesc"></div>
+<div class="row"><span class="muted">Price</span><strong id="price"></strong></div>
+<div class="row"><span class="muted">Network</span><strong id="net"></strong></div>
+<div class="bar"><i id="fill"></i></div>
+<div class="muted" id="supply"></div>
+<div class="qty"><button class="ghost" id="minus">−</button><span id="q">1</span><button class="ghost" id="plus">+</button><span class="muted" id="total"></span></div>
+<button id="mintBtn" style="width:100%">Mint</button>
+</div>
+</div>
+<div id="status"></div>
+<h3>Collection preview</h3>
+<div class="grid" id="grid"></div>
+<footer>Buying NFTs involves risk. Verify the price, network and contract address before confirming any transaction.</footer>
+</div>
+<script>
+// ===== CONFIG: put your own details here =====
+const CONFIG = {
+  brand: "Your Store",
+  name: "Genesis Collection",
+  desc: "A limited collection of digital art NFTs. Mint and receive it directly in your wallet.",
+  contract: "0x0000000000000000000000000000000000000000", // your NFT contract address
+  chainIdHex: "0x38", chainName: "BNB Smart Chain (BSC)", symbol: "USDT",
+  usdt: "0x55d398326f99059fF775485246999027B3197955", // USDT on BSC (BEP-20, 18 decimals)
+  price: "20", // price per NFT in USDT
+  maxPerTx: 5,
+  fallbackMax: 1000,
+  siteUrl: "https://claude.ai/artifact/D2CwEaDD1t1JnrXgU3uKbX" // replace with your own domain once hosted
+};
+const ABI = ["function mint(uint256 quantity)","function totalSupply() view returns (uint256)","function maxSupply() view returns (uint256)"];
+const ERC20 = ["function allowance(address owner,address spender) view returns (uint256)","function approve(address spender,uint256 amount) returns (bool)","function balanceOf(address) view returns (uint256)"];
+const DEMO = /^0x0+$/.test(CONFIG.contract);
+let account=null, qty=1, minted=0, max=CONFIG.fallbackMax;
+const announced=[];
+window.addEventListener("eip6963:announceProvider",e=>{announced.push(e.detail)});
+try{window.dispatchEvent(new Event("eip6963:requestProvider"))}catch(e){}
+function getEth(){return window.ethereum||(announced[0]&&announced[0].provider)||null}
+const $=id=>document.getElementById(id);
+function say(m,t){const s=$("status");s.style.display="block";s.className=t||"";s.textContent=m}
+function short(a){return a.slice(0,6)+"…"+a.slice(-4)}
+function errMsg(e){if(e&&e.code===4001)return"Request rejected in your wallet.";return(e&&(e.reason||(e.data&&e.data.message)||e.message))||"Unknown error"}
+function art(i){const h=(i*47)%360,h2=(h+60)%360;
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h} 80% 60%)"/><stop offset="1" stop-color="hsl(${h2} 80% 45%)"/></linearGradient></defs><rect width="100" height="100" fill="url(#g${i})"/><circle cx="${30+(i*13)%40}" cy="${35+(i*7)%30}" r="${14+(i%4)*4}" fill="rgba(255,255,255,.28)"/><path d="M0 ${70+(i%3)*8} Q50 ${50+(i%5)*6} 100 ${75-(i%3)*6} V100 H0Z" fill="rgba(0,0,0,.22)"/></svg>`}
+function ui(){
+  $("brand").textContent=CONFIG.brand;$("cname").textContent=CONFIG.name;$("cdesc").textContent=CONFIG.desc;
+  $("price").textContent=CONFIG.price+" "+CONFIG.symbol;$("net").textContent=CONFIG.chainName;
+  $("hero").innerHTML=art(3);
+  $("grid").innerHTML=[1,2,5,7,9,11,13,15].map(i=>`<div class="art">${art(i)}</div>`).join("");
+  $("q").textContent=qty;
+  $("total").textContent="Total "+(parseFloat(CONFIG.price)*qty)+" "+CONFIG.symbol;
+  $("supply").textContent=minted+" / "+max+" minted";
+  $("fill").style.width=Math.min(100,minted/max*100)+"%";
+}
+function setupHelp(){
+  const bare=CONFIG.siteUrl.replace(/^https?:\/\//,"");
+  $("mmLink").href="https://metamask.app.link/dapp/"+bare;
+  $("twLink").href="https://link.trustwallet.com/open_url?coin_id=20000714&url="+encodeURIComponent(CONFIG.siteUrl);
+}
+function checkWallet(){$("help").style.display=getEth()?"none":"block"}
+async function connect(){
+  const eth=getEth();
+  if(!eth){checkWallet();say("No wallet found. Use the links above or open this page in a wallet browser.","err");return false}
+  try{
+    const a=await eth.request({method:"eth_requestAccounts"});
+    account=a[0];$("connect").textContent=short(account);say("Wallet connected: "+short(account),"ok");
+    loadSupply();return true;
+  }catch(e){say("Could not connect: "+errMsg(e),"err");return false}
+}
+async function ensureChain(){
+  const eth=getEth();
+  const c=await eth.request({method:"eth_chainId"});
+  if(c===CONFIG.chainIdHex)return true;
+  try{await eth.request({method:"wallet_switchEthereumChain",params:[{chainId:CONFIG.chainIdHex}]});return true}
+  catch(e){
+    if(e&&e.code===4902){
+      try{await eth.request({method:"wallet_addEthereumChain",params:[{chainId:"0x38",chainName:"BNB Smart Chain",nativeCurrency:{name:"BNB",symbol:"BNB",decimals:18},rpcUrls:["https://bsc-dataseed.binance.org"],blockExplorerUrls:["https://bscscan.com"]}]});return true}catch(e2){}
+    }
+    say("Please switch your wallet to "+CONFIG.chainName+" and try again.","err");return false}
+}
+async function loadSupply(){
+  if(DEMO||!getEth())return;
+  try{
+    const p=new ethers.providers.Web3Provider(getEth());
+    const c=new ethers.Contract(CONFIG.contract,ABI,p);
+    minted=(await c.totalSupply()).toNumber();
+    try{max=(await c.maxSupply()).toNumber()}catch(e){}
+    ui();
+  }catch(e){}
+}
+async function mint(){
+  if(DEMO){say("Demo mode: add your NFT contract address in CONFIG to enable minting.","err");return}
+  if(!account&&!(await connect()))return;
+  if(!(await ensureChain()))return;
+  const b=$("mintBtn");b.disabled=true;
+  try{
+    const p=new ethers.providers.Web3Provider(getEth());
+    const signer=p.getSigner();
+    const c=new ethers.Contract(CONFIG.contract,ABI,signer);
+    const total=ethers.utils.parseUnits(CONFIG.price,18).mul(qty);
+    const u=new ethers.Contract(CONFIG.usdt,ERC20,signer);
+    if((await u.balanceOf(account)).lt(total)){say("Not enough USDT (BEP-20) in your wallet. You also need a little BNB for gas.","err");b.disabled=false;return}
+    if((await u.allowance(account,CONFIG.contract)).lt(total)){
+      say("Step 1 of 2: approve USDT spending in your wallet…");
+      const ap=await u.approve(CONFIG.contract,total);await ap.wait();
+    }
+    say("Step 2 of 2: confirm the mint in your wallet…");
+    const tx=await c.mint(qty);
+    say("Transaction sent, waiting for confirmation… TX: "+tx.hash);
+    await tx.wait();
+    say("Success! "+qty+" NFT(s) minted to your wallet. TX: "+tx.hash,"ok");
+    loadSupply();
+  }catch(e){say("Mint failed: "+errMsg(e),"err")}
+  b.disabled=false;
+}
+$("connect").onclick=connect;$("mintBtn").onclick=mint;
+$("minus").onclick=()=>{qty=Math.max(1,qty-1);ui()};
+$("plus").onclick=()=>{qty=Math.min(CONFIG.maxPerTx,qty+1);ui()};
+window.addEventListener("ethereum#initialized",checkWallet);
+const _e=getEth();
+if(_e&&_e.on){_e.on("accountsChanged",a=>{account=a[0]||null;$("connect").textContent=account?short(account):"Connect Wallet"})}
+setupHelp();ui();setTimeout(checkWallet,1000);
+</script>
+</body>
+</html>
